@@ -1,0 +1,12 @@
+# ---------------------------------------------------------------------------
+# Dental Clinic Management System — Python Dependencies (Backend Only)
+# ---------------------------------------------------------------------------
+
+# Backend
+fastapi>=0.115.0,<1.0.0
+uvicorn[standard]>=0.32.0,<1.0.0
+sqlalchemy>=2.0.36,<3.0.0
+pydantic>=2.9.0,<3.0.0
+
+# HTTP client (used by backend health-check and integration tests)
+requests>=2.32.0,<3.0.0
