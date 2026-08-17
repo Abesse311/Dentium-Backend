@@ -130,13 +130,13 @@ Once the server is running, navigate in your browser to:
 | `PATCH`/`PUT` | `/api/treatments/{id}` | Update status (`planned`, `in_progress`, `completed`), tooth, or price |
 | `DELETE` | `/api/treatments/{id}` | Delete a treatment record |
 
-### 🏷 Treatment Types (French Catalog)
+### 🏷 Treatment Types (French Catalog: Général / Par dent)
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/treatment-types` | List all procedure types in the catalog |
-| `POST` | `/api/treatment-types` | Add a new procedure type |
+| `GET` | `/api/treatment-types` | List procedure types in the catalog (filter by `?category=general` or `?category=per_tooth`) |
+| `POST` | `/api/treatment-types` | Add a new procedure type (requires `category`: `'general'` or `'per_tooth'`) |
 | `GET` | `/api/treatment-types/{id}` | Get procedure type details |
-| `PUT`/`PATCH` | `/api/treatment-types/{id}` | Update procedure name, default price, or description |
+| `PUT`/`PATCH` | `/api/treatment-types/{id}` | Update procedure category, name, default price, or description |
 | `DELETE` | `/api/treatment-types/{id}` | Delete procedure type (protected against in-use procedures) |
 
 ### 💳 Invoices & Payments

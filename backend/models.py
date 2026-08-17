@@ -77,8 +77,12 @@ class Appointment(Base):
 
 class TreatmentType(Base):
     __tablename__ = "treatment_types"
+    __table_args__ = (
+        CheckConstraint("category IN ('general', 'per_tooth')", name="chk_treatment_type_category"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    category = Column(Text, nullable=False, default="general")
     name = Column(Text, nullable=False)
     default_price = Column(Numeric(10, 2), default=0.0)
     description = Column(Text, nullable=True)
