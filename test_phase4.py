@@ -30,17 +30,36 @@ def test_phase_4():
     client = TestClient(app)
 
     # 1. Treatment Types Catalog
-    print("\n[1] Testing Treatment Types Catalog...")
+    print("\n[1] Testing Treatment Types Catalog & Category Separation...")
+    # List all
     res_types = client.get("/api/treatment-types")
     assert res_types.status_code == 200
     types = res_types.json()
-    assert len(types) >= 7
-    print(f"  [OK] Retrieved {len(types)} treatment types from catalog")
+    assert len(types) >= 27, f"Expected at least 27 catalog types, got {len(types)}"
+    assert all("category" in t for t in types)
+    print(f"  [OK] Retrieved {len(types)} total treatment types with category metadata")
 
-    # Add custom treatment type
+    # Filter general care types
+    res_gen = client.get("/api/treatment-types?category=general")
+    assert res_gen.status_code == 200
+    gen_types = res_gen.json()
+    assert len(gen_types) >= 14
+    assert all(t["category"] == "general" for t in gen_types)
+    print(f"  [OK] GET /api/treatment-types?category=general returned {len(gen_types)} general treatment types")
+
+    # Filter per-tooth care types
+    res_tooth = client.get("/api/treatment-types?category=per_tooth")
+    assert res_tooth.status_code == 200
+    tooth_types = res_tooth.json()
+    assert len(tooth_types) >= 13
+    assert all(t["category"] == "per_tooth" for t in tooth_types)
+    print(f"  [OK] GET /api/treatment-types?category=per_tooth returned {len(tooth_types)} per-tooth treatment types")
+
+    # Add custom treatment type with category
     res_new_type = client.post(
         "/api/treatment-types",
         json={
+            "category": "per_tooth",
             "name": "Pose d'implant en titane",
             "default_price": 60000.00,
             "description": "Implantologie chirurgicale",
@@ -50,7 +69,20 @@ def test_phase_4():
     custom_type = res_new_type.json()
     custom_type_id = custom_type["id"]
     assert custom_type["name"] == "Pose d'implant en titane"
-    print(f"  [OK] Added custom treatment type #{custom_type_id}: '{custom_type['name']}' (60,000 DZD)")
+    assert custom_type["category"] == "per_tooth"
+    print(f"  [OK] Added custom per-tooth treatment type #{custom_type_id}: '{custom_type['name']}' (60,000 DZD)")
+
+    # Reject creating treatment type without valid category
+    res_bad_cat = client.post(
+        "/api/treatment-types",
+        json={
+            "category": "invalid_category",
+            "name": "Traitement inconnu",
+            "default_price": 1000.00,
+        },
+    )
+    assert res_bad_cat.status_code == 422
+    print("  [OK] Invalid treatment type category rejected with 422")
 
     # Update custom treatment type
     res_update_type = client.patch(
@@ -75,10 +107,11 @@ def test_phase_4():
     appointment_id = apt_res.json()["id"]
     print(f"  [OK] Created patient #{patient_id} and appointment #{appointment_id}")
 
-    # 3. Create Treatments & Price Fallback
-    print("\n[3] Testing Treatment Creation & Automatic Price Fallback...")
-    detartrage = next((t for t in types if t["name"] == "Détartrage"), types[0])
+    # 3. Create Treatments & Price Fallback & Cross-Validation
+    print("\n[3] Testing Treatment Creation & Category Cross-Validation...")
+    detartrage = next((t for t in gen_types if "détartrage" in t["name"].lower()), gen_types[0])
 
+    # Valid General Treatment (tooth_number = None)
     tr_payload1 = {
         "patient_id": patient_id,
         "treatment_type_id": detartrage["id"],
@@ -93,15 +126,26 @@ def test_phase_4():
     assert tr1_data["id"] is not None
     assert float(tr1_data["price"]) == float(detartrage["default_price"])
     assert tr1_data["tooth_number"] is None
-    assert tr1_data["treatment_type"]["name"] == "Détartrage"
     tr1_id = tr1_data["id"]
     print(f"  [OK] General treatment #{tr1_id} created with auto-applied price {tr1_data['price']} DZD")
 
-    # Create tooth-specific treatment
-    plombage = next((t for t in types if t["name"] == "Plombage"), types[1])
+    # Invalid General Treatment (with tooth_number) -> must fail
+    res_bad_gen_tooth = client.post(
+        "/api/treatments",
+        json={
+            "patient_id": patient_id,
+            "treatment_type_id": detartrage["id"],
+            "tooth_number": 21,
+        },
+    )
+    assert res_bad_gen_tooth.status_code == 422
+    print("  [OK] General treatment with a tooth number properly rejected with 422")
+
+    # Create tooth-specific treatment (valid)
+    carie = next((t for t in tooth_types if "carie" in t["name"].lower() or "plombage" in t["name"].lower()), tooth_types[0])
     tr_payload2 = {
         "patient_id": patient_id,
-        "treatment_type_id": plombage["id"],
+        "treatment_type_id": carie["id"],
         "tooth_number": 26,
         "status": "planned",
         "price": 3500.00,
@@ -115,14 +159,26 @@ def test_phase_4():
     tr2_id = tr2_data["id"]
     print(f"  [OK] Tooth treatment #{tr2_id} created on FDI tooth #26 with custom price 3,500 DZD")
 
+    # Invalid Per-Tooth Treatment (without tooth_number) -> must fail
+    res_bad_tooth_null = client.post(
+        "/api/treatments",
+        json={
+            "patient_id": patient_id,
+            "treatment_type_id": carie["id"],
+            "tooth_number": None,
+        },
+    )
+    assert res_bad_tooth_null.status_code == 422
+    print("  [OK] Per-tooth treatment without a tooth number properly rejected with 422")
+
     # 4. FDI Tooth Notation Validation
     print("\n[4] Testing Tooth Notation Validation (FDI 11-48)...")
     res_bad_tooth = client.post(
         "/api/treatments",
-        json={"patient_id": patient_id, "treatment_type_id": detartrage["id"], "tooth_number": 99},
+        json={"patient_id": patient_id, "treatment_type_id": carie["id"], "tooth_number": 99},
     )
     assert res_bad_tooth.status_code == 422, f"Expected 422 for invalid tooth 99, got {res_bad_tooth.status_code}"
-    print("  [OK] Tooth #99 rejected with 422 (must be within FDI range 11-48 or NULL)")
+    print("  [OK] Tooth #99 rejected with 422 (must be within FDI range 11-48)")
 
     # 5. Foreign Key Validations
     print("\n[5] Testing Foreign Key Validations...")
@@ -182,9 +238,9 @@ def test_phase_4():
 
     # 10. Treatment Type Deletion Protection
     print("\n[10] Testing Treatment Type Deletion Protection...")
-    res_del_inuse = client.delete(f"/api/treatment-types/{plombage['id']}")
+    res_del_inuse = client.delete(f"/api/treatment-types/{carie['id']}")
     assert res_del_inuse.status_code == 400
-    print(f"  [OK] Deleting in-use treatment type '{plombage['name']}' properly rejected with 400 Bad Request")
+    print(f"  [OK] Deleting in-use treatment type '{carie['name']}' properly rejected with 400 Bad Request")
 
     res_del_unused = client.delete(f"/api/treatment-types/{custom_type_id}")
     assert res_del_unused.status_code == 200

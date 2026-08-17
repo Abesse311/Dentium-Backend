@@ -36,8 +36,8 @@ def test_phase_5():
     patient_id = p_res.json()["id"]
 
     types = client.get("/api/treatment-types").json()
-    consultation_type = next((t for t in types if t["name"] == "Consultation"), types[0])
-    couronne_type = next((t for t in types if t["name"] == "Couronne dentaire"), types[-2])
+    consultation_type = next((t for t in types if "consultation" in t["name"].lower()), types[0])
+    couronne_type = next((t for t in types if "couronne" in t["name"].lower()), types[-2])
 
     tr1_res = client.post(
         "/api/treatments",

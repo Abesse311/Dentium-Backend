@@ -108,10 +108,10 @@ def test_phase_6():
 
     # Create an invoice and register a payment made TODAY
     types = client.get("/api/treatment-types").json()
-    canal_type = next((t for t in types if t["name"] == "Traitement de canal"), types[0])
+    canal_type = next((t for t in types if "canal" in t["name"].lower() or "dévitalisation" in t["name"].lower()), types[0])
     tr_res = client.post(
         "/api/treatments",
-        json={"patient_id": p1["id"], "treatment_type_id": canal_type["id"], "status": "completed"},
+        json={"patient_id": p1["id"], "treatment_type_id": canal_type["id"], "tooth_number": 46, "status": "completed"},
     )
     tr_id = tr_res.json()["id"]
 

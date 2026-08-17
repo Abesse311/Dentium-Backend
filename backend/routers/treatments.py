@@ -1,5 +1,5 @@
 from datetime import date
-from typing import List, Optional
+from typing import List, Optional, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
@@ -26,9 +26,18 @@ treatment_types_router = APIRouter()
     response_model=List[TreatmentTypeResponse],
     summary="List all treatment types in the catalog",
 )
-def list_treatment_types(db: Session = Depends(get_db)):
-    """Retrieve all treatment types with French names and default prices."""
-    return db.query(TreatmentType).order_by(TreatmentType.id.asc()).all()
+def list_treatment_types(
+    category: Optional[Literal["general", "per_tooth"]] = Query(
+        None,
+        description="Filter by category: 'general' (soins généraux) or 'per_tooth' (soins par dent)",
+    ),
+    db: Session = Depends(get_db),
+):
+    """Retrieve treatment types with French names, categories, and default prices."""
+    query = db.query(TreatmentType)
+    if category:
+        query = query.filter(TreatmentType.category == category)
+    return query.order_by(TreatmentType.id.asc()).all()
 
 
 @treatment_types_router.post(
@@ -40,6 +49,7 @@ def list_treatment_types(db: Session = Depends(get_db)):
 def create_treatment_type(payload: TreatmentTypeCreate, db: Session = Depends(get_db)):
     """Create a new procedure type in the clinic's catalog."""
     treatment_type = TreatmentType(
+        category=payload.category,
         name=payload.name,
         default_price=payload.default_price,
         description=payload.description,
@@ -152,7 +162,19 @@ def create_treatment(payload: TreatmentCreate, db: Session = Depends(get_db)):
             detail=f"Treatment type with ID {payload.treatment_type_id} not found",
         )
 
-    # 3. Validate optional appointment
+    # 3. Cross-validate category vs tooth_number
+    if tt.category == "general" and payload.tooth_number is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Le soin général '{tt.name}' ne peut pas être associé à une dent spécifique (tooth_number doit être NULL)",
+        )
+    if tt.category == "per_tooth" and payload.tooth_number is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Le soin par dent '{tt.name}' nécessite un numéro de dent FDI valide (11-48)",
+        )
+
+    # 4. Validate optional appointment
     if payload.appointment_id is not None:
         appointment = db.query(Appointment).filter(Appointment.id == payload.appointment_id).first()
         if not appointment:
@@ -166,7 +188,7 @@ def create_treatment(payload: TreatmentCreate, db: Session = Depends(get_db)):
                 detail=f"Appointment #{payload.appointment_id} belongs to patient #{appointment.patient_id}, not patient #{payload.patient_id}",
             )
 
-    # 4. Fallback price to default catalog price if omitted
+    # 5. Fallback price to default catalog price if omitted
     price = payload.price if payload.price is not None else tt.default_price
     treatment_date = payload.treatment_date or date.today()
 
@@ -314,6 +336,24 @@ def update_treatment(
             )
 
     update_data = payload.model_dump(exclude_unset=True)
+
+    # Cross-validate category vs tooth_number
+    target_tt_id = payload.treatment_type_id if payload.treatment_type_id is not None else treatment.treatment_type_id
+    target_tt = db.query(TreatmentType).filter(TreatmentType.id == target_tt_id).first()
+    target_tooth = payload.tooth_number if "tooth_number" in update_data else treatment.tooth_number
+
+    if target_tt:
+        if target_tt.category == "general" and target_tooth is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Le soin général '{target_tt.name}' ne peut pas être associé à une dent spécifique (tooth_number doit être NULL)",
+            )
+        if target_tt.category == "per_tooth" and target_tooth is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Le soin par dent '{target_tt.name}' nécessite un numéro de dent FDI valide (11-48)",
+            )
+
     for field, value in update_data.items():
         setattr(treatment, field, value)
 

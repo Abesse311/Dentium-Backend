@@ -69,6 +69,10 @@ class ClinicSettingsResponse(BaseModel):
 # Treatment Types Catalog
 # ---------------------------------------------------------------------------
 class TreatmentTypeBase(BaseModel):
+    category: Literal["general", "per_tooth"] = Field(
+        ...,
+        description="Category: 'general' (soin général) or 'per_tooth' (soin par dent)",
+    )
     name: str = Field(..., min_length=1, description="French name of the treatment type")
     default_price: Decimal = Field(default=Decimal("0.00"), ge=0, description="Default price in DZD")
     description: Optional[str] = None
@@ -87,6 +91,7 @@ class TreatmentTypeCreate(TreatmentTypeBase):
 
 
 class TreatmentTypeUpdate(BaseModel):
+    category: Optional[Literal["general", "per_tooth"]] = None
     name: Optional[str] = Field(None, min_length=1)
     default_price: Optional[Decimal] = Field(None, ge=0)
     description: Optional[str] = None
@@ -103,6 +108,7 @@ class TreatmentTypeUpdate(BaseModel):
 
 class TreatmentTypeResponse(BaseModel):
     id: int
+    category: str
     name: str
     default_price: Decimal
     description: Optional[str] = None
