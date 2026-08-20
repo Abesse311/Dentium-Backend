@@ -7,6 +7,7 @@ from backend.database import get_db
 from backend.models import Treatment, TreatmentType, Patient, Appointment
 from backend.schemas import (
     TreatmentCreate,
+    TreatmentBulkCreate,
     TreatmentUpdate,
     TreatmentResponse,
     TreatmentTypeCreate,
@@ -209,6 +210,93 @@ def create_treatment(payload: TreatmentCreate, db: Session = Depends(get_db)):
     treatment.patient = patient
     treatment.treatment_type = tt
     return treatment
+
+
+@treatments_router.post(
+    "/bulk",
+    response_model=List[TreatmentResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Record dental treatments in bulk across multiple teeth",
+)
+def create_treatments_bulk(payload: TreatmentBulkCreate, db: Session = Depends(get_db)):
+    """Create multiple treatment records atomically for a list of teeth with identical procedure details."""
+    # 1. Validate patient existence
+    patient = db.query(Patient).filter(Patient.id == payload.patient_id).first()
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Patient with ID {payload.patient_id} not found",
+        )
+
+    # 2. Validate treatment type existence and category
+    tt = db.query(TreatmentType).filter(TreatmentType.id == payload.treatment_type_id).first()
+    if not tt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Treatment type with ID {payload.treatment_type_id} not found",
+        )
+
+    if tt.category != "per_tooth":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Le soin '{tt.name}' est un soin général (category='general') et ne peut pas être appliqué en masse par dent. La sélection multi-dents est réservée aux soins par dent (category='per_tooth').",
+        )
+
+    # 3. Validate tooth_numbers list is not empty
+    if not payload.tooth_numbers:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La liste des numéros de dent (tooth_numbers) ne peut pas être vide",
+        )
+
+    # 4. Validate optional appointment
+    if payload.appointment_id is not None:
+        appointment = db.query(Appointment).filter(Appointment.id == payload.appointment_id).first()
+        if not appointment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Appointment with ID {payload.appointment_id} not found",
+            )
+        if appointment.patient_id != payload.patient_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Appointment #{payload.appointment_id} belongs to patient #{appointment.patient_id}, not patient #{payload.patient_id}",
+            )
+
+    # 5. Fallback price & treatment date
+    price = payload.price if payload.price is not None else tt.default_price
+    treatment_date = payload.treatment_date or date.today()
+
+    # 6. Build and persist records atomically
+    treatments_to_create: List[Treatment] = []
+    for tooth in payload.tooth_numbers:
+        treatment = Treatment(
+            patient_id=payload.patient_id,
+            appointment_id=payload.appointment_id,
+            treatment_type_id=payload.treatment_type_id,
+            tooth_number=tooth,
+            status=payload.status or "planned",
+            price=price,
+            treatment_date=treatment_date,
+            notes=payload.notes,
+        )
+        treatments_to_create.append(treatment)
+
+    try:
+        db.add_all(treatments_to_create)
+        db.commit()
+        for t in treatments_to_create:
+            db.refresh(t)
+            t.patient = patient
+            t.treatment_type = tt
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erreur lors de la création en masse des soins: {str(e)}",
+        )
+
+    return treatments_to_create
 
 
 @treatments_router.get(

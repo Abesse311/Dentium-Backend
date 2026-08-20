@@ -1,3 +1,4 @@
+from datetime import date
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_
@@ -166,8 +167,21 @@ def get_patient_treatments(patient_id: int, db: Session = Depends(get_db)):
     response_model=List[InvoiceResponse],
     summary="Get patient's full invoice and payment history",
 )
-def get_patient_invoices(patient_id: int, db: Session = Depends(get_db)):
-    """Get all invoices (including line items and payments) for a patient."""
+def get_patient_invoices(
+    patient_id: int,
+    status_filter: Optional[str] = Query(
+        None,
+        alias="status",
+        description="Filter by invoice status: 'unpaid', 'partially_paid', 'paid'",
+    ),
+    date_filter: Optional[date] = Query(None, alias="date", description="Filter invoices for an exact single date (YYYY-MM-DD)"),
+    date_from: Optional[date] = Query(None, description="Filter invoices from date (inclusive)"),
+    date_to: Optional[date] = Query(None, description="Filter invoices to date (inclusive)"),
+    start_date: Optional[date] = Query(None, description="Alias for date_from"),
+    end_date: Optional[date] = Query(None, description="Alias for date_to"),
+    db: Session = Depends(get_db),
+):
+    """Get all invoices (including line items and payments) for a patient with optional date & status filters."""
     patient = db.query(Patient).filter(Patient.id == patient_id).first()
     if not patient:
         raise HTTPException(
@@ -175,14 +189,29 @@ def get_patient_invoices(patient_id: int, db: Session = Depends(get_db)):
             detail=f"Patient with ID {patient_id} not found",
         )
 
-    invoices = (
+    query = (
         db.query(Invoice)
         .options(
             joinedload(Invoice.items),
             joinedload(Invoice.payments),
         )
         .filter(Invoice.patient_id == patient_id)
-        .order_by(Invoice.invoice_date.desc(), Invoice.id.desc())
+    )
+
+    effective_from = date_from or start_date
+    effective_to = date_to or end_date
+
+    if status_filter:
+        query = query.filter(Invoice.status == status_filter)
+    if date_filter is not None:
+        query = query.filter(Invoice.invoice_date == date_filter)
+    if effective_from is not None:
+        query = query.filter(Invoice.invoice_date >= effective_from)
+    if effective_to is not None:
+        query = query.filter(Invoice.invoice_date <= effective_to)
+
+    invoices = (
+        query.order_by(Invoice.invoice_date.desc(), Invoice.id.desc())
         .all()
     )
     return invoices

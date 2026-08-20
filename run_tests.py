@@ -19,11 +19,12 @@ from test_phase3 import test_phase_3
 from test_phase4 import test_phase_4
 from test_phase5 import test_phase_5
 from test_phase6 import test_phase_6
+from test_phase7 import test_phase_7
 
 
 def main():
     print("\n" + "#" * 70)
-    print("  RUNNING COMPLETE DENTAL CLINIC BACKEND TEST SUITE (PHASES 1-6)")
+    print("  RUNNING COMPLETE DENTAL CLINIC BACKEND TEST SUITE (PHASES 1-7)")
     print("#" * 70 + "\n")
 
     phases = [
@@ -33,6 +34,7 @@ def main():
         ("Phase 4: Treatments & Treatment Types Module (Odontogram)", test_phase_4),
         ("Phase 5: Invoices & Payments Module", test_phase_5),
         ("Phase 6: Dashboard & Settings Module", test_phase_6),
+        ("Phase 7: Financial Analytics & Reporting ('Analyses & Revenus')", test_phase_7),
     ]
 
     passed = 0

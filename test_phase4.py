@@ -246,6 +246,65 @@ def test_phase_4():
     assert res_del_unused.status_code == 200
     print(f"  [OK] Deleting unused custom treatment type #{custom_type_id} succeeded")
 
+    # 11. Multi-Tooth Bulk Creation
+    print("\n[11] Testing Multi-Tooth Bulk Treatment Creation (/api/treatments/bulk)...")
+    # A. Valid bulk creation across 4 teeth
+    bulk_payload = {
+        "patient_id": patient_id,
+        "treatment_type_id": carie["id"],
+        "tooth_numbers": [18, 28, 38, 48],
+        "status": "planned",
+        "price": 3500.00,
+        "treatment_date": "2026-08-18",
+        "notes": "Bulk wisdom teeth treatment",
+    }
+    res_bulk = client.post("/api/treatments/bulk", json=bulk_payload)
+    assert res_bulk.status_code == 201, f"Expected 201, got {res_bulk.status_code}: {res_bulk.text}"
+    bulk_created = res_bulk.json()
+    assert len(bulk_created) == 4
+    assert [t["tooth_number"] for t in bulk_created] == [18, 28, 38, 48]
+    assert all(t["price"] == "3500.00" for t in bulk_created)
+    assert all(t["patient_id"] == patient_id for t in bulk_created)
+    print(f"  [OK] Successfully bulk-created 4 treatments for teeth [18, 28, 38, 48]")
+
+    # B. Reject general category treatment in bulk creation (422)
+    detartrage = next(t for t in types if t["category"] == "general")
+    res_bulk_gen = client.post(
+        "/api/treatments/bulk",
+        json={
+            "patient_id": patient_id,
+            "treatment_type_id": detartrage["id"],
+            "tooth_numbers": [11, 12],
+            "price": 4000.00,
+        },
+    )
+    assert res_bulk_gen.status_code == 422
+    print(f"  [OK] Rejecting general care type '{detartrage['name']}' in bulk endpoint with 422 Unprocessable Entity")
+
+    # C. Reject invalid tooth numbers (422)
+    res_bulk_invalid_teeth = client.post(
+        "/api/treatments/bulk",
+        json={
+            "patient_id": patient_id,
+            "treatment_type_id": carie["id"],
+            "tooth_numbers": [99, 105],
+        },
+    )
+    assert res_bulk_invalid_teeth.status_code == 422
+    print(f"  [OK] Rejecting invalid tooth numbers with 422")
+
+    # D. Reject empty tooth list (422)
+    res_bulk_empty = client.post(
+        "/api/treatments/bulk",
+        json={
+            "patient_id": patient_id,
+            "treatment_type_id": carie["id"],
+            "tooth_numbers": [],
+        },
+    )
+    assert res_bulk_empty.status_code == 422
+    print(f"  [OK] Rejecting empty tooth list with 422")
+
     print("\n" + "=" * 60)
     print("  ALL PHASE 4 TESTS PASSED SUCCESSFULLY! [100% OK]")
     print("=" * 60 + "\n")

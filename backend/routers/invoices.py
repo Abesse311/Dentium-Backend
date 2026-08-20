@@ -1,18 +1,19 @@
 from datetime import date
 from decimal import Decimal
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from backend.database import get_db
-from backend.models import Invoice, InvoiceItem, Payment, Patient, Treatment
+from backend.models import Invoice, InvoiceItem, Payment, Patient, Treatment, ClinicSettings
 from backend.schemas import (
     InvoiceCreate,
     InvoiceResponse,
     PaymentCreate,
     PaymentResponse,
 )
+from backend.services.pdf_service import generate_invoice_pdf
 
 invoices_router = APIRouter()
 payments_router = APIRouter()
@@ -113,12 +114,24 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
         inv_number = payload.invoice_number.strip()
     else:
         current_year = inv_date.year
-        count_this_year = (
-            db.query(Invoice)
-            .filter(Invoice.invoice_number.like(f"INV-{current_year}-%"))
-            .count()
+        existing_numbers = (
+            db.query(Invoice.invoice_number)
+            .filter(
+                (Invoice.invoice_number.like(f"FAC-{current_year}-%"))
+                | (Invoice.invoice_number.like(f"INV-{current_year}-%"))
+            )
+            .all()
         )
-        inv_number = f"INV-{current_year}-{(count_this_year + 1):04d}"
+        max_seq = 0
+        for (num_str,) in existing_numbers:
+            if num_str:
+                parts = num_str.split("-")
+                if len(parts) >= 3 and parts[-1].isdigit():
+                    seq = int(parts[-1])
+                    if seq > max_seq:
+                        max_seq = seq
+
+        inv_number = f"FAC-{current_year}-{(max_seq + 1):04d}"
 
     # 4. Create Invoice
     invoice = Invoice(
@@ -157,8 +170,11 @@ def list_invoices(
         alias="status",
         description="Filter by invoice status: 'unpaid', 'partially_paid', 'paid'",
     ),
+    date_filter: Optional[date] = Query(None, alias="date", description="Filter invoices for an exact single date (YYYY-MM-DD)"),
     date_from: Optional[date] = Query(None, description="Filter invoices from date (inclusive)"),
     date_to: Optional[date] = Query(None, description="Filter invoices to date (inclusive)"),
+    start_date: Optional[date] = Query(None, description="Alias for date_from"),
+    end_date: Optional[date] = Query(None, description="Alias for date_to"),
     skip: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(200, ge=1, le=1000, description="Max invoices to return"),
     db: Session = Depends(get_db),
@@ -173,14 +189,19 @@ def list_invoices(
         )
     )
 
+    effective_from = date_from or start_date
+    effective_to = date_to or end_date
+
     if patient_id is not None:
         query = query.filter(Invoice.patient_id == patient_id)
     if status_filter:
         query = query.filter(Invoice.status == status_filter)
-    if date_from is not None:
-        query = query.filter(Invoice.invoice_date >= date_from)
-    if date_to is not None:
-        query = query.filter(Invoice.invoice_date <= date_to)
+    if date_filter is not None:
+        query = query.filter(Invoice.invoice_date == date_filter)
+    if effective_from is not None:
+        query = query.filter(Invoice.invoice_date >= effective_from)
+    if effective_to is not None:
+        query = query.filter(Invoice.invoice_date <= effective_to)
 
     invoices = (
         query.order_by(Invoice.invoice_date.desc(), Invoice.id.desc())
@@ -214,6 +235,50 @@ def get_invoice(invoice_id: int, db: Session = Depends(get_db)):
             detail=f"Invoice with ID {invoice_id} not found",
         )
     return invoice
+
+
+@invoices_router.get(
+    "/{invoice_id}/pdf",
+    summary="Export and download invoice as PDF",
+    response_description="Returns the generated PDF file",
+    responses={
+        200: {
+            "content": {"application/pdf": {}},
+            "description": "Invoice PDF document",
+        },
+        404: {"description": "Invoice not found"},
+    },
+)
+def get_invoice_pdf(invoice_id: int, db: Session = Depends(get_db)):
+    """Generate and return a downloadable PDF for any invoice (unpaid, partially paid, or paid)."""
+    invoice = (
+        db.query(Invoice)
+        .options(
+            joinedload(Invoice.patient),
+            joinedload(Invoice.items),
+            joinedload(Invoice.payments),
+        )
+        .filter(Invoice.id == invoice_id)
+        .first()
+    )
+    if not invoice:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Invoice with ID {invoice_id} not found",
+        )
+
+    clinic_settings = db.query(ClinicSettings).filter(ClinicSettings.id == 1).first()
+
+    pdf_bytes = generate_invoice_pdf(invoice=invoice, settings=clinic_settings)
+    filename = f"facture_{invoice.invoice_number or f'FAC-{invoice_id:04d}'}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+        },
+    )
 
 
 @invoices_router.delete(

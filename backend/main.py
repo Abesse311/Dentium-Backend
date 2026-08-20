@@ -10,6 +10,7 @@ from backend.routers import (
     appointments,
     dashboard,
     settings,
+    reports,
 )
 from backend.routers.treatments import treatments_router, treatment_types_router
 from backend.routers.invoices import invoices_router, payments_router
@@ -68,6 +69,11 @@ app.include_router(payments_router, prefix="/payments", tags=["Invoices & Paymen
 
 app.include_router(settings.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(settings.router, prefix="/settings", tags=["Settings"], include_in_schema=False)
+
+app.include_router(reports.router, prefix="/api/reports", tags=["Reports & Analytics"])
+app.include_router(reports.router, prefix="/reports", tags=["Reports & Analytics"], include_in_schema=False)
+app.include_router(reports.router, prefix="/api/analytics", tags=["Reports & Analytics"], include_in_schema=False)
+app.include_router(reports.router, prefix="/analytics", tags=["Reports & Analytics"], include_in_schema=False)
 
 
 # ---------------------------------------------------------------------------

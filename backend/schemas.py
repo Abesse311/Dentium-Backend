@@ -147,6 +147,44 @@ class TreatmentCreate(TreatmentBase):
     pass
 
 
+class TreatmentBulkCreate(BaseModel):
+    patient_id: int
+    treatment_type_id: int
+    tooth_numbers: List[int] = Field(
+        ...,
+        min_length=1,
+        description="List of FDI two-digit notation tooth numbers (e.g. [18, 28, 38, 48])",
+    )
+    appointment_id: Optional[int] = None
+    status: Optional[Literal["planned", "in_progress", "completed"]] = "planned"
+    price: Optional[Decimal] = Field(None, ge=0, description="Treatment price per tooth in DZD")
+    treatment_date: Optional[date] = None
+    notes: Optional[str] = None
+
+    @field_validator("tooth_numbers")
+    @classmethod
+    def validate_tooth_numbers(cls, v: List[int]) -> List[int]:
+        if not v:
+            raise ValueError("tooth_numbers list cannot be empty")
+        
+        valid_teeth = {
+            # Quadrant 1 (Upper Right)
+            11, 12, 13, 14, 15, 16, 17, 18,
+            # Quadrant 2 (Upper Left)
+            21, 22, 23, 24, 25, 26, 27, 28,
+            # Quadrant 3 (Lower Left)
+            31, 32, 33, 34, 35, 36, 37, 38,
+            # Quadrant 4 (Lower Right)
+            41, 42, 43, 44, 45, 46, 47, 48,
+        }
+        invalid = [t for t in v if t not in valid_teeth]
+        if invalid:
+            raise ValueError(f"Invalid FDI tooth number(s): {invalid}. Must be valid adult FDI notation (11-18, 21-28, 31-38, 41-48).")
+        
+        # Deduplicate while preserving original order
+        return list(dict.fromkeys(v))
+
+
 class TreatmentUpdate(BaseModel):
     treatment_type_id: Optional[int] = None
     appointment_id: Optional[int] = None
@@ -378,5 +416,102 @@ class DashboardTodayResponse(BaseModel):
     daily_patient_limit: int
     fill_ratio: float
     today_appointments: List[AppointmentResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# Financial Analytics & Reporting ("Analyses & Revenus")
+# ---------------------------------------------------------------------------
+class ByPaymentMethod(BaseModel):
+    cash: Decimal = Decimal("0.00")
+    card: Decimal = Decimal("0.00")
+    transfer: Decimal = Decimal("0.00")
+    other: Decimal = Decimal("0.00")
+
+
+class InvoicesSummary(BaseModel):
+    total_count: int
+    paid_count: int
+    partially_paid_count: int
+    unpaid_count: int
+
+
+class ReportSummaryResponse(BaseModel):
+    period: str
+    start_date: date
+    end_date: date
+    total_income: Decimal
+    total_invoiced: Decimal
+    collection_rate: float
+    payment_count: int
+    by_payment_method: ByPaymentMethod
+    invoices_summary: InvoicesSummary
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TrendPoint(BaseModel):
+    date: str
+    label: str
+    income: Decimal
+    invoiced: Decimal
+    payment_count: int
+
+
+class ReportTrendResponse(BaseModel):
+    period: str
+    start_date: date
+    end_date: date
+    granularity: str
+    points: List[TrendPoint] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DebtorPatient(BaseModel):
+    patient_id: int
+    patient_name: str
+    patient_phone: Optional[str] = None
+    total_invoiced: Decimal
+    total_paid: Decimal
+    total_debt: Decimal
+    unpaid_invoices_count: int
+    latest_invoice_date: Optional[date] = None
+
+
+class ReportDebtsResponse(BaseModel):
+    total_outstanding_debt: Decimal
+    debtor_patients_count: int
+    unpaid_invoices_count: int
+    debtors: List[DebtorPatient] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TreatmentRevenueItem(BaseModel):
+    treatment_type_id: Optional[int] = None
+    treatment_type_name: str
+    category: Optional[str] = None
+    total_amount: Decimal
+    items_count: int
+    percentage: float
+
+
+class ReportTreatmentsResponse(BaseModel):
+    period: str
+    start_date: date
+    end_date: date
+    total_revenue: Decimal
+    items: List[TreatmentRevenueItem] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ReportOverviewResponse(BaseModel):
+    summary: ReportSummaryResponse
+    trend: ReportTrendResponse
+    debts: ReportDebtsResponse
+    treatments: ReportTreatmentsResponse
 
     model_config = ConfigDict(from_attributes=True)

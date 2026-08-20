@@ -145,10 +145,20 @@ Once the server is running, navigate in your browser to:
 | `POST` | `/api/invoices` | Generate invoice from completed treatments |
 | `GET` | `/api/invoices` | List invoices (filter by `?status=`, `?patient_id=`, date ranges) |
 | `GET` | `/api/invoices/{id}` | Get full invoice with line items and registered payments |
+| `GET` | `/api/invoices/{id}/pdf` | Generate & download PDF invoice document (`application/pdf`) |
 | `DELETE` | `/api/invoices/{id}` | Delete an invoice |
 | `POST` | `/api/invoices/{id}/payments` | Register payment against invoice (auto-updates `unpaid` → `partially_paid` → `paid`) |
 | `GET` | `/api/invoices/{id}/payments` | List all payments for an invoice |
 | `DELETE` | `/api/payments/{id}` | Delete payment (auto-recalculates invoice balance and rolls back status) |
+
+### 📊 Financial Analytics & Reports ("Analyses & Revenus")
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/reports/summary` | Total income, invoiced total, collection rate (taux de recouvrement), and payment methods |
+| `GET` | `/api/reports/trend` | Income and billing time-series trend over time (`daily` or `monthly` points) |
+| `GET` | `/api/reports/debts` | Outstanding debts (créances) and debtor patient ranking sorted by debt |
+| `GET` | `/api/reports/treatments` | Revenue and volume breakdown grouped by treatment type |
+| `GET` | `/api/reports/overview` | Comprehensive all-in-one financial reporting overview for the analytics page |
 
 ### ⚙ Settings & System
 | Method | Endpoint | Description |

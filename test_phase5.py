@@ -79,6 +79,7 @@ def test_phase_5():
     assert float(inv_data["total_amount"]) == 16000.00
     assert float(inv_data["paid_amount"]) == 0.00
     assert len(inv_data["items"]) == 2
+    assert inv_data["invoice_number"].startswith(f"FAC-{date.today().year}-"), f"Expected FAC- prefix, got {inv_data['invoice_number']}"
     print(f"  [OK] Created invoice #{inv_id} ({inv_data['invoice_number']}): Total 16,000 DZD, Status 'unpaid'")
 
     # 3. Ownership & Foreign Key Validation
@@ -92,6 +93,17 @@ def test_phase_5():
     )
     assert res_cross.status_code == 400
     print("  [OK] Cross-patient treatment inclusion correctly rejected with 400 Bad Request")
+
+    # 3.1 PDF Export for Unpaid Invoice
+    print("\n[3.1] Testing PDF Export for Unpaid Invoice...")
+    res_pdf_unpaid = client.get(f"/api/invoices/{inv_id}/pdf")
+    assert res_pdf_unpaid.status_code == 200
+    assert "application/pdf" in res_pdf_unpaid.headers["content-type"]
+    assert res_pdf_unpaid.content.startswith(b"%PDF-"), "Response does not start with PDF magic bytes"
+    assert len(res_pdf_unpaid.content) > 500, "PDF content is too small"
+    expected_disposition = f'inline; filename="facture_{inv_data["invoice_number"]}.pdf"'
+    assert res_pdf_unpaid.headers["content-disposition"] == expected_disposition, f"Expected {expected_disposition}, got {res_pdf_unpaid.headers['content-disposition']}"
+    print(f"  [OK] Generated PDF for unpaid invoice #{inv_id} with header '{expected_disposition}'")
 
     # 4. Partial Payment Registration
     print("\n[4] Testing Partial Payment Registration (unpaid -> partially_paid)...")
@@ -111,6 +123,13 @@ def test_phase_5():
     assert float(inv_chk1_data["paid_amount"]) == 6000.00
     print(f"  [OK] Registered partial payment of 6,000 DZD. Invoice status -> 'partially_paid'")
 
+    # 4.1 PDF Export for Partially Paid Invoice
+    res_pdf_partial = client.get(f"/api/invoices/{inv_id}/pdf")
+    assert res_pdf_partial.status_code == 200
+    assert "application/pdf" in res_pdf_partial.headers["content-type"]
+    assert res_pdf_partial.content.startswith(b"%PDF-")
+    print(f"  [OK] Generated PDF for partially paid invoice #{inv_id} ({len(res_pdf_partial.content)} bytes)")
+
     # 5. Full Payment Registration
     print("\n[5] Testing Full Payment Registration (partially_paid -> paid)...")
     pay2_payload = {
@@ -128,6 +147,17 @@ def test_phase_5():
     assert inv_chk2_data["status"] == "paid"
     assert float(inv_chk2_data["paid_amount"]) == 16000.00
     print(f"  [OK] Registered second payment of 10,000 DZD. Invoice status -> 'paid'")
+
+    # 5.1 PDF Export for Fully Paid Invoice & 404 Check
+    res_pdf_paid = client.get(f"/api/invoices/{inv_id}/pdf")
+    assert res_pdf_paid.status_code == 200
+    assert "application/pdf" in res_pdf_paid.headers["content-type"]
+    assert res_pdf_paid.content.startswith(b"%PDF-")
+    print(f"  [OK] Generated PDF for fully paid invoice #{inv_id} ({len(res_pdf_paid.content)} bytes)")
+
+    res_pdf_404 = client.get("/api/invoices/999999/pdf")
+    assert res_pdf_404.status_code == 404
+    print("  [OK] PDF export for non-existent invoice correctly returned 404 Not Found")
 
     # 6. Payment Validation
     print("\n[6] Testing Payment Input Validation...")
