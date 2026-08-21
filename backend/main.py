@@ -85,6 +85,7 @@ app.include_router(reports.router, prefix="/analytics", tags=["Reports & Analyti
     tags=["System"],
     summary="Health check",
 )
+@app.get("/health", response_model=HealthResponse, include_in_schema=False)
 def health_check(db: Session = Depends(get_db)):
     """Health check endpoint to verify backend and database connectivity."""
     return HealthResponse(

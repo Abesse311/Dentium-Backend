@@ -41,7 +41,7 @@ class Patient(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     full_name = Column(Text, nullable=False)
     phone = Column(Text, nullable=True)
-    birth_date = Column(Date, nullable=False)
+    birth_date = Column(Date, nullable=True)
     gender = Column(Text, nullable=True)
     address = Column(Text, nullable=True)
     medical_history = Column(Text, nullable=True)

@@ -127,20 +127,39 @@ class TreatmentPatientSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+VALID_FDI_TEETH = {
+    # Quadrant 1 (Upper Right)
+    11, 12, 13, 14, 15, 16, 17, 18,
+    # Quadrant 2 (Upper Left)
+    21, 22, 23, 24, 25, 26, 27, 28,
+    # Quadrant 3 (Lower Left)
+    31, 32, 33, 34, 35, 36, 37, 38,
+    # Quadrant 4 (Lower Right)
+    41, 42, 43, 44, 45, 46, 47, 48,
+}
+
+
 class TreatmentBase(BaseModel):
     patient_id: int
     treatment_type_id: int
     appointment_id: Optional[int] = None
     tooth_number: Optional[int] = Field(
         None,
-        ge=11,
-        le=48,
         description="FDI two-digit notation (11-48), NULL for general treatment",
     )
     status: Optional[Literal["planned", "in_progress", "completed"]] = "planned"
     price: Optional[Decimal] = Field(None, ge=0, description="Treatment price in DZD")
     treatment_date: Optional[date] = None
     notes: Optional[str] = None
+
+    @field_validator("tooth_number")
+    @classmethod
+    def validate_tooth_number(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v not in VALID_FDI_TEETH:
+            raise ValueError(
+                f"Invalid FDI tooth number: {v}. Must be a valid adult FDI tooth notation (11-18, 21-28, 31-38, 41-48)."
+            )
+        return v
 
 
 class TreatmentCreate(TreatmentBase):
@@ -167,17 +186,7 @@ class TreatmentBulkCreate(BaseModel):
         if not v:
             raise ValueError("tooth_numbers list cannot be empty")
         
-        valid_teeth = {
-            # Quadrant 1 (Upper Right)
-            11, 12, 13, 14, 15, 16, 17, 18,
-            # Quadrant 2 (Upper Left)
-            21, 22, 23, 24, 25, 26, 27, 28,
-            # Quadrant 3 (Lower Left)
-            31, 32, 33, 34, 35, 36, 37, 38,
-            # Quadrant 4 (Lower Right)
-            41, 42, 43, 44, 45, 46, 47, 48,
-        }
-        invalid = [t for t in v if t not in valid_teeth]
+        invalid = [t for t in v if t not in VALID_FDI_TEETH]
         if invalid:
             raise ValueError(f"Invalid FDI tooth number(s): {invalid}. Must be valid adult FDI notation (11-18, 21-28, 31-38, 41-48).")
         
@@ -188,11 +197,20 @@ class TreatmentBulkCreate(BaseModel):
 class TreatmentUpdate(BaseModel):
     treatment_type_id: Optional[int] = None
     appointment_id: Optional[int] = None
-    tooth_number: Optional[int] = Field(None, ge=11, le=48)
+    tooth_number: Optional[int] = Field(None, description="FDI two-digit notation (11-48)")
     status: Optional[Literal["planned", "in_progress", "completed"]] = None
     price: Optional[Decimal] = Field(None, ge=0)
     treatment_date: Optional[date] = None
     notes: Optional[str] = None
+
+    @field_validator("tooth_number")
+    @classmethod
+    def validate_tooth_number(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v not in VALID_FDI_TEETH:
+            raise ValueError(
+                f"Invalid FDI tooth number: {v}. Must be a valid adult FDI tooth notation (11-18, 21-28, 31-38, 41-48)."
+            )
+        return v
 
 
 class TreatmentResponse(BaseModel):
@@ -291,7 +309,7 @@ class InvoiceResponse(BaseModel):
 class PatientBase(BaseModel):
     full_name: str = Field(..., min_length=1, description="Full name of the patient")
     phone: Optional[str] = None
-    birth_date: date = Field(..., description="Date of birth of the patient")
+    birth_date: Optional[date] = Field(None, description="Date of birth of the patient")
     gender: Optional[Literal["male", "female"]] = None
     address: Optional[str] = None
     medical_history: Optional[str] = None
@@ -333,7 +351,7 @@ class PatientResponse(BaseModel):
     id: int
     full_name: str
     phone: Optional[str] = None
-    birth_date: date
+    birth_date: Optional[date] = None
     gender: Optional[str] = None
     address: Optional[str] = None
     medical_history: Optional[str] = None

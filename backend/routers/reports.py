@@ -284,6 +284,9 @@ def compute_debts_report(db: Session, limit: int = 50) -> ReportDebtsResponse:
         inv_total = Decimal(str(inv.total_amount))
         inv_paid = Decimal(str(inv.paid_amount))
         inv_debt = inv_total - inv_paid
+        if inv_debt <= Decimal("0.00"):
+            continue
+
         total_debt_sum += inv_debt
 
         pid = inv.patient_id
@@ -362,7 +365,11 @@ def compute_treatments_report(
             category = tt.category
         else:
             # Custom line item or direct description
-            clean_desc = item.description.split("(")[0].strip() if item.description else "Prestation diverse"
+            clean_desc = (
+                item.description.split("(")[0].strip()
+                if (item.description and item.description.split("(")[0].strip())
+                else "Prestation diverse"
+            )
             key = f"desc_{clean_desc.lower()}"
             tt_id = None
             tt_name = clean_desc
