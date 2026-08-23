@@ -1,3 +1,4 @@
+import sys
 import os
 from pathlib import Path
 from decimal import Decimal
@@ -5,9 +6,21 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-# Database path: clinic.db in backend directory
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "clinic.db"
+# Database path resolution:
+if getattr(sys, "frozen", False):
+    # In production (.exe mode): store in %APPDATA%/Dentium to ensure write access and persist across updates
+    app_data = os.environ.get("APPDATA")
+    if app_data:
+        data_dir = Path(app_data) / "Dentium"
+    else:
+        data_dir = Path(sys.executable).resolve().parent
+    data_dir.mkdir(parents=True, exist_ok=True)
+    DB_PATH = Path(os.environ.get("CLINIC_DB_PATH", str(data_dir / "clinic.db")))
+else:
+    # In development: store in backend/ directory
+    BASE_DIR = Path(__file__).resolve().parent
+    DB_PATH = Path(os.environ.get("CLINIC_DB_PATH", str(BASE_DIR / "clinic.db")))
+
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(
